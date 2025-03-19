@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>掌紋認証システム</title>
+    <script>
+        let videoStream = null;
+        let canvas, context;
+        let rect_x, rect_y, rect_w, rect_h;
+
+        function openCamera() {
+            const video = document.getElementById('video');
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                    drawRectangle();
+                })
+                .catch(error => {
+                    alert("カメラを開けませんでした: " + error);
+                });
+        }
+
+        function closeCamera() {
+            const video = document.getElementById('video');
+            if (video.srcObject) {
+                let tracks = video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+            }
+            video.srcObject = null;
+            video.pause();
+            video.src = '';
+        }
+
+        function drawRectangle() {
+            const video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            context = canvas.getContext('2d');
+            canvas.width = video.width;
+            canvas.height = video.height;
+
+            rect_w = 400, rect_h = 400;
+            rect_x = (canvas.width - rect_w) / 2;
+            rect_y = (canvas.height - rect_h) / 2;
+
+            function draw() {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                context.save();
+                context.scale(-1, 1);
+                context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+                context.restore();
+
+                context.strokeStyle = "red";
+                context.lineWidth = 2;
+                context.strokeRect(rect_x, rect_y, rect_w, rect_h);
+
+                requestAnimationFrame(draw);
+            }
+
+            draw();
+        }
+
+        function getRoiImage() {
+            const imageData = context.getImageData(rect_x, rect_y, rect_w, rect_h);
+            const roiCanvas = document.createElement('canvas');
+            const roiContext = roiCanvas.getContext('2d');
+            roiCanvas.width = rect_w;
+            roiCanvas.height = rect_h;
+            roiContext.putImageData(imageData, 0, 0);
+            return roiCanvas.toDataURL('image/png');
+        }
+
+        function registerImage() {
+            const roiImage = getRoiImage();
+            fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: roiImage })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.registeredImage) {
+                    document.getElementById('registeredImage').src = data.registeredImage;
+                }
+            });
+        }
+
+        function authenticateImage() {
+            const roiImage = getRoiImage();
+            fetch('/match', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: roiImage })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.matchImage) {
+                    document.getElementById('matchImage').src = data.matchImage;
+                }
+                if (data.resultImage) {
+                    document.getElementById('resultImage').src = data.resultImage;
+                }
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>掌紋認証システム</h1>
+    <button onclick="openCamera()">カメラを開く</button>
+    <button onclick="closeCamera()">カメラを閉じる</button>
+    <br>
+    <video id="video" width="640" height="480" autoplay style="display: none;"></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <br>
+    <button onclick="registerImage()">登録</button>
+    <button onclick="authenticateImage()">認証</button>
+    <br>
+    <h2>登録画像</h2>
+    <img id="registeredImage" alt="登録画像" />
+    <h2>照合画像</h2>
+    <img id="matchImage" alt="照合画像" />
+    <h2>認証結果画像</h2>
+    <img id="resultImage" alt="認証結果画像" />
+</body>
+</html>

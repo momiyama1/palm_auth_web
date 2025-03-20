@@ -29,21 +29,19 @@
 
 ## セットアップ方法
 
-1. **このリポジトリをクローンします。**
+1. このリポジトリをクローンします。
    ```bash
    git clone https://github.com/yourusername/palm-recognition.git
 
-2. **必要なパッケージをインストールします。**
+2. 必要なパッケージをインストールします。
    ```bash
    cd palm_auth_web
    python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate  # Windows
    pip install -r requirements.txt
 
-3. **サーバーを起動します。**
+3. サーバーを起動します。
    ```bash
    python app.py
 
-4. **ブラウザにアクセスし、アプリケーションを使用できます。**
+4. ブラウザにアクセスし、アプリケーションを使用できます。
    http://127.0.0.1:5000/

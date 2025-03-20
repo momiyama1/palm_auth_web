@@ -31,7 +31,7 @@
 
 1. このリポジトリをクローンします。
    ```bash
-   git clone https://github.com/yourusername/palm-recognition.git
+   git clone https://github.com/momiyama1/palm_auth_web.git
 
 2. 必要なパッケージをインストールします。
    ```bash

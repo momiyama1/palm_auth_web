@@ -72,19 +72,31 @@
         }
 
         function registerImage() {
-            const roiImage = getRoiImage();
-            fetch('/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: roiImage })
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                if (data.registeredImage) {
-                    document.getElementById('registeredImage').src = data.registeredImage;
-                }
-            });
+            try {
+                const roiImage = getRoiImage();
+                fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: roiImage })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('登録に失敗しました');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    alert(data.message);
+                    if (data.registeredImage) {
+                        document.getElementById('registeredImage').src = data.registeredImage;
+                    }
+                })
+                .catch(error => {
+                    alert('エラーが発生しました: ' + error.message);
+                });
+            } catch (error) {
+                alert('画像の取得に失敗しました: ' + error.message);
+            }
         }
 
         function authenticateImage() {
@@ -118,10 +130,16 @@
     <button onclick="registerImage()">登録</button>
     <button onclick="authenticateImage()">認証</button>
     <br>
-    <h2>登録画像</h2>
-    <img id="registeredImage" alt="登録画像" />
-    <h2>照合画像</h2>
-    <img id="matchImage" alt="照合画像" />
+    <div style="display: flex; gap: 20px;">
+        <div>
+            <h3>登録画像</h3>
+            <img id="registeredImage" alt="登録画像" />
+        </div>
+        <div>
+            <h3>照合画像</h3>
+            <img id="matchImage" alt="照合画像" />
+        </div>
+    </div>
     <h2>認証結果画像</h2>
     <img id="resultImage" alt="認証結果画像" />
 </body>

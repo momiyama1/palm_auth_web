@@ -86,14 +86,9 @@ def extract_features(pre_img):
     # 特徴点と特徴量の抽出
     keypoints, descriptors = akaze.detectAndCompute(pre_img, None)
 
-    # # ORBを使用
-    # orb = cv2.ORB_create(nfeatures=500)  # ORBを使用
-    # keypoints, descriptors = orb.detectAndCompute(pre_img, None)
-
     # 特徴点を可視化
     keypoint_image = cv2.drawKeypoints(pre_img, keypoints, None, color=(0, 255, 0))
-    _, buffer = cv2.imencode('.png', keypoint_image)
-    match_image_data = base64.b64encode(buffer).decode('utf-8')
+    match_image_data = encode_image_to_base64(keypoint_image)
 
     if descriptors is None:
         print("⚠ 特徴点が抽出されませんでした。")
@@ -136,8 +131,7 @@ def match_palm(new_keypoints, new_descriptors, keypoints, descriptors, new_pre_i
 
         # マッチング結果の可視化
         result_img = cv2.drawMatches(pre_img, keypoints, new_pre_img, new_keypoints,good_matches, None, matchesMask=matchesMask)
-        _, buffer = cv2.imencode('.png', result_img)
-        result_image_data = base64.b64encode(buffer).decode('utf-8')
+        result_image_data = encode_image_to_base64(result_img)
 
         logging.info("認証成功")
         return True, result_image_data
@@ -154,6 +148,23 @@ def ratio_test(matches, ratio=MATCH_RATIO):
             good_matches.append(m)
     return good_matches
 
+def convert_to_opencv_image(image_data):
+    """
+    PIL画像をOpenCV形式に変換する関数
+    """
+    image = Image.open(BytesIO(image_data))
+    rgb_image = np.array(image)
+    open_cv_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
+    return open_cv_image
+
+def encode_image_to_base64(image):
+    """
+    OpenCV画像をBase64エンコードする関数
+    """
+    _, buffer = cv2.imencode('.png', image)
+    encoded_image_data = base64.b64encode(buffer).decode('utf-8')
+    return encoded_image_data
+
 @app.route('/')
 def index():
     """メインページを表示"""
@@ -169,13 +180,24 @@ def register():
     try:
         global registered_keypoints, registered_descriptors, pre_img
         data = request.get_json()
-        if not data or 'image' not in data:
+
+        # 入力データの検証
+        if not data:
+            logging.error("送信されたデータが空です")
+            return jsonify({"message": "リクエストボディが空です。JSON形式で画像を送信してください。"}), 400
+
+        if 'image' not in data:
+            logging.error("画像データが見つかりません")
             return jsonify({"message": "画像データが見つかりません"}), 400
 
-        image_data = base64.b64decode(data['image'].split(',')[1])
-        image = Image.open(BytesIO(image_data))
-        rgb_image = np.array(image)
-        open_cv_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
+        # 画像データのデコード
+        try:
+            image_data = base64.b64decode(data['image'].split(',')[1])
+        except Exception as e:
+            logging.error(f"画像データのデコードに失敗: {str(e)}")
+            return jsonify({"message": "画像データのデコードに失敗しました。正しいBase64形式で送信してください。"}), 400
+        
+        open_cv_image = convert_to_opencv_image(image_data)
 
         # 画像の前処理
         pre_img = preprocess_image(open_cv_image)
@@ -184,6 +206,7 @@ def register():
         registered_keypoints, registered_descriptors, registered_image_data = extract_features(pre_img)
 
         if registered_keypoints is None:
+            logging.error("特徴点が抽出されませんでした")
             return jsonify({"message": "特徴点が抽出されませんでした"}), 400
         
 
@@ -193,6 +216,7 @@ def register():
         })
 
     except Exception as e:
+        logging.error(f"予期しないエラーが発生しました: {str(e)}")
         return jsonify({"message": f"エラーが発生しました: {str(e)}"}), 500
 
 @app.route('/match', methods=['POST'])
@@ -201,37 +225,60 @@ def match():
     global registered_keypoints, registered_descriptors, pre_img
 
     if registered_keypoints is None or registered_descriptors is None:
+        logging.warning("登録された特徴点がありません")
         return jsonify({"message": "⚠ 登録された特徴点がありません。まずは登録してください。"}), 400
     
-    data = request.get_json()
-    image_data = base64.b64decode(data['image'].split(',')[1])
-    image = Image.open(BytesIO(image_data))
-    rgb_image = np.array(image)
-    open_cv_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
     
-    # 新しい画像の前処理
-    new_pre_img = preprocess_image(open_cv_image)
+    try:
+        data = request.get_json()
 
-    # 特徴点と特徴量の抽出
-    new_keypoints, new_descriptors, match_image_data = extract_features(new_pre_img)
+        # 入力データの検証
+        if not data:
+            logging.error("送信されたデータが空です")
+            return jsonify({"message": "リクエストボディが空です。JSON形式で画像を送信してください。"}), 400
+        
+        if 'image' not in data:
+            logging.error("画像データが見つかりません")
+            return jsonify({"message": "画像データが見つかりません"}), 400
 
-    if new_keypoints is None:
-        return jsonify({"message": "特徴点が抽出されませんでした"}), 400
+        # 画像データのデコード
+        try:
+            image_data = base64.b64decode(data['image'].split(',')[1])
+        except Exception as e:
+            logging.error(f"画像データのデコードに失敗: {str(e)}")
+            return jsonify({"message": "画像データのデコードに失敗しました。正しいBase64形式で送信してください。"}), 400
 
-    # 手のひら照合の実行
-    result, result_image_data = match_palm(new_keypoints, new_descriptors, registered_keypoints, registered_descriptors, new_pre_img, pre_img)
-    
-    if not result:
+        # 新しい画像の前処理
+        open_cv_image = convert_to_opencv_image(image_data)
+        new_pre_img = preprocess_image(open_cv_image)
+
+        # 特徴点と特徴量の抽出
+        new_keypoints, new_descriptors, match_image_data = extract_features(new_pre_img)
+
+        if new_keypoints is None:
+            logging.error("新しい画像の特徴点が抽出されませんでした")
+            return jsonify({"message": "特徴点が抽出されませんでした"}), 400
+
+        # 手のひら照合の実行
+        result, result_image_data = match_palm(new_keypoints, new_descriptors, registered_keypoints, registered_descriptors, new_pre_img, pre_img)
+        
+        if not result:
+            logging.warning("認証失敗")
+            return jsonify({
+                "message": "認証失敗しました。もう一度試してください。",
+                "matchImage": f"data:image/png;base64,{match_image_data}" 
+            }), 400
+
+        logging.info("認証成功")
         return jsonify({
-            "message": "認証失敗しました。もう一度試してください。",
-            "matchImage": f"data:image/png;base64,{match_image_data}" 
-        }), 400
-
-    return jsonify({
-        "message": "認証成功！",
-        "matchImage": f"data:image/png;base64,{match_image_data}",
-        "resultImage": f"data:image/png;base64,{result_image_data}"
+            "message": "認証成功！",
+            "matchImage": f"data:image/png;base64,{match_image_data}",
+            "resultImage": f"data:image/png;base64,{result_image_data}"
         })  
+
+    except Exception as e:
+        logging.error(f"予期しないエラーが発生しました: {str(e)}")
+        return jsonify({"message": f"エラーが発生しました: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

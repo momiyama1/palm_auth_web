@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>掌紋認証システム</title>
+    <link rel="stylesheet" href="../static/style.css">
     <script>
         let videoStream = null;
         let canvas, context;
@@ -16,9 +17,18 @@
                     video.srcObject = stream;
                     video.play();
                     drawRectangle();
+                    enableButtons(); // カメラが開かれたらボタンを有効化
                 })
                 .catch(error => {
-                    alert("カメラを開けませんでした: " + error);
+                    let errorMessage = "カメラを開けませんでした。";
+                    if (error.name === 'NotFoundError') {
+                        errorMessage = "カメラが見つかりませんでした。接続を確認してください。";
+                    } else if (error.name === 'NotAllowedError') {
+                        errorMessage = "カメラの使用許可が拒否されました。設定から許可をしてください。";
+                    } else if (error.name === 'OverconstrainedError') {
+                        errorMessage = "カメラの設定が制約に一致しませんでした。解像度の設定を確認してください。";
+                    }
+                    alert(errorMessage + " 詳細: " + error.message);
                 });
         }
 
@@ -31,6 +41,7 @@
             video.srcObject = null;
             video.pause();
             video.src = '';
+            disableButtons(); // カメラが閉じられたらボタンを無効化
         }
 
         function drawRectangle() {
@@ -62,13 +73,18 @@
         }
 
         function getRoiImage() {
-            const imageData = context.getImageData(rect_x, rect_y, rect_w, rect_h);
-            const roiCanvas = document.createElement('canvas');
-            const roiContext = roiCanvas.getContext('2d');
-            roiCanvas.width = rect_w;
-            roiCanvas.height = rect_h;
-            roiContext.putImageData(imageData, 0, 0);
-            return roiCanvas.toDataURL('image/png');
+            try {
+                const imageData = context.getImageData(rect_x, rect_y, rect_w, rect_h);
+                const roiCanvas = document.createElement('canvas');
+                const roiContext = roiCanvas.getContext('2d');
+                roiCanvas.width = rect_w;
+                roiCanvas.height = rect_h;
+                roiContext.putImageData(imageData, 0, 0);
+                return roiCanvas.toDataURL('image/png');
+            } catch (error) {
+                alert('ROI画像の取得に失敗しました: ' + error.message);
+                return null;
+            }
         }
 
         function registerImage() {
@@ -81,7 +97,9 @@
                 })
                 .then(response => {
                     if (!response.ok) {
-                        throw new Error('登録に失敗しました');
+                        return response.json().then(data => {
+                            throw new Error(data.message || '登録に失敗しました');
+                        });
                     }
                     return response.json();
                 })
@@ -106,7 +124,14 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: roiImage })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.message || '認証に失敗しました');
+                    });
+                }
+                return response.json();
+            })
             .then(data => {
                 alert(data.message);
                 if (data.matchImage) {
@@ -115,7 +140,22 @@
                 if (data.resultImage) {
                     document.getElementById('resultImage').src = data.resultImage;
                 }
+            })
+            .catch(error => {
+                alert('エラーが発生しました: ' + error.message);
             });
+        }
+
+        // ボタンを有効化
+        function enableButtons() {
+            document.getElementById('registerBtn').disabled = false;
+            document.getElementById('authenticateBtn').disabled = false;
+        }
+
+        // ボタンを無効化
+        function disableButtons() {
+            document.getElementById('registerBtn').disabled = true;
+            document.getElementById('authenticateBtn').disabled = true;
         }
     </script>
 </head>
@@ -127,10 +167,10 @@
     <video id="video" width="640" height="480" autoplay style="display: none;"></video>
     <canvas id="canvas" width="640" height="480"></canvas>
     <br>
-    <button onclick="registerImage()">登録</button>
-    <button onclick="authenticateImage()">認証</button>
+    <button id="registerBtn" onclick="registerImage()" disabled>登録</button>
+    <button id="authenticateBtn" onclick="authenticateImage()" disabled>認証</button>
     <br>
-    <div style="display: flex; gap: 20px;">
+    <div class="image-container">
         <div>
             <h3>登録画像</h3>
             <img id="registeredImage" alt="登録画像" />
@@ -140,7 +180,9 @@
             <img id="matchImage" alt="照合画像" />
         </div>
     </div>
-    <h2>認証結果画像</h2>
-    <img id="resultImage" alt="認証結果画像" />
+    <div class="result-container">
+        <h3>認証結果画像</h3>
+        <img id="resultImage" alt="認証結果画像" />
+    </div>
 </body>
 </html>
